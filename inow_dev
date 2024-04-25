@@ -1,0 +1,214 @@
+#!/bin/bash
+
+#a brif
+function tool_brif () {
+  echo -e "\033[31m  inow-tool
+  sudo ./inow g50         BUILD
+            ? recipe      BUILD   ?
+            ? recipe      REBUILD ?
+            ? recipe      WIPE    ?  \033[0m";
+}
+
+#for global arg collecting
+function pre_run_g_arg_init () {
+  echo "************************"
+  g_arg_repo=$(grep 'repo:' $1.ini | sed 's?repo:??')
+  echo $g_arg_repo
+
+  echo "************************"
+  g_arg_prj=$(grep 'prj:' $g_arg_repo.ini | sed 's?prj:??')
+  echo $g_arg_prj
+
+  echo "************************"
+  g_arg_spx_pack=$(grep 'spx-pack:' $g_arg_repo.ini | sed 's?spx-pack:??')
+  echo $g_arg_spx_pack
+
+  echo "************************"
+  g_arg_orgpack=$(grep 'org:' $g_arg_repo.ini | sed 's?org:??')
+  echo $g_arg_orgpack
+
+  echo "************************"
+  g_arg_modpack=$(grep 'mod:' $g_arg_repo.ini | sed 's?mod:??')
+  echo $g_arg_modpack
+
+  echo "************************"
+  g_arg_spx_ws=$(grep 'spx-ws:' $g_arg_repo.ini | sed 's?spx-ws:??')
+  echo $g_arg_spx_ws
+
+  echo "************************"
+  g_arg_spx_tool=$(grep 'path:' tool.ini | sed 's?path:??')
+  echo $g_arg_spx_tool
+
+  echo "************************"
+  g_arg_clientip=$(grep 'client:' seed.ini | sed 's?client:??')
+  echo $g_arg_clientip
+
+  echo "************************"
+  g_arg_usr=$(grep 'user:' seed.ini | sed 's?user:??')
+  echo $g_arg_usr
+
+  echo "************************"
+  g_arg_lokt=$(grep 'lokt:' seed.ini | sed 's?lokt:??')
+  echo $g_arg_lokt
+
+  echo "************************"
+  g_arg_meta=$(grep 'meta:' $g_arg_repo.ini | sed 's?meta:??')
+  echo $g_arg_meta
+
+  echo "************************"
+  g_arg_uname=$(grep 'uname:' remote.ini | sed 's?uname:??')
+  echo $g_arg_uname
+  echo "?"
+
+  echo "************************"
+  g_arg_uip=$(grep 'uip:' remote.ini | sed 's?uip:??')
+  echo $g_arg_uip
+
+  echo "************************"
+  g_arg_uport=$(grep 'uport:' remote.ini | sed 's?uport:??')
+  echo $g_arg_uport
+
+  echo "************************"
+  g_arg_localremote=$(grep 'repo:' remote.ini | sed 's?repo:??')
+  echo $g_arg_localremote
+}
+
+#send to remote
+function seed () {
+  figlet "S * E * E * D"
+  scp -r                                     \
+  ${g_arg_spx_ws}Build/output/$1.ima_enc     \
+  ${g_arg_usr}@${g_arg_clientip}:${g_arg_lokt}
+  echo "************************"
+}
+
+#good
+function make_image_name_by_timestamp () {
+  figlet "I * M * G"
+  ls ${g_arg_spx_ws}Build/output/*.ima_enc
+  echo "************************"
+
+  #make name
+  imgname=$(date +%-y_%-m_%-d_%-H_%-M);
+  mv                                           \
+  ${g_arg_spx_ws}Build/output/*.ima_enc        \
+  ${g_arg_spx_ws}Build/output/$imgname.ima_enc
+}
+
+#before build first clean
+function clean_old_img () {
+  rm -rf ${g_arg_spx_ws}Build/output/*.ima_enc
+  rm -rf ${g_arg_spx_ws}Build/output/*.ima
+}
+
+#api for calling ami spx py api
+#the input arg are 
+#                   WIPE REBUILD BUILD
+function spx_build_unit () {
+  ./${g_arg_spx_tool}BuildPRJ/BuildPRJ.py ${g_arg_prj} ${g_arg_spx_pack} ${g_arg_spx_ws} $1 $2                           
+}
+
+#api for calling ami spx py api
+#pack the package to spx format
+function spx_pack_unit () {
+  ./${g_arg_spx_tool}PackSPX/PackSPX.py -c ${g_arg_modpack}$1.spx ${g_arg_modpack}$1
+}
+
+#pack the spx format file and build 
+function pack_inject () {
+  #pack the modified package to spx-package for md5sum check
+  spx_pack_unit $1
+  
+  #check if we need update  
+  md51=$(md5sum ${g_arg_modpack}$1.spx | cut -d ' ' -f 1)
+  md52=$(md5sum ${g_arg_spx_pack}$1.spx | cut -d ' ' -f 1)
+  
+  #same md5sum then abort
+  if [ "$md51" = "$md52" ];then
+    figlet "S * K * I * P"
+    echo $1
+    echo "************************"
+  else
+    #means we need build the singal modified package
+    figlet "I * N * J * C * T"
+    echo $1
+    echo "************************"
+
+    #send the modified spx-package to workspace dir
+    cp -rf ${g_arg_modpack}$1.spx ${g_arg_spx_pack}
+
+    #wipe build the singal spx-package that modified
+    do_spx_build WIPE ${g_arg_spx_pack}$1.spx
+  fi
+}
+
+#build the needed-build packs and then build who project
+function do_spx_seriers_inject_build () {
+  #make stream that recorded the modified packages
+  diff -uprN ${g_arg_orgpack} ${g_arg_modpack}  \
+  |grep "+++ ${g_arg_modpack}"                  \
+  |sed 's?/data/.*??'                           \
+  |sed 's?/spx/.*??'                            \
+  |sed 's?+++ ??'                               \
+  |sed 's?'"${g_arg_modpack}"'??'               \
+  |while read tostream;do
+    pack_inject $tostream
+  done
+
+  clean_old_img;
+
+  #at last , we build the whole project
+  do_spx_build BUILD
+
+  #timestamp sign image
+  make_image_name_by_timestamp;
+
+  #send to remote
+  seed $imgname;
+}
+
+
+#the core build process
+#REBUILD ,WIPE ,BUILD are clean ami spx py api
+#_BUILD is a seriers event
+function do_spx_build () {
+  case "${1}" in
+    REBUILD|BUILD)
+      spx_build_unit $1
+    ;;
+    WIPE)
+      spx_build_unit $1 $2 <<EOF
+Y
+EOF
+    ;;
+    _BUILD)
+      do_spx_seriers_inject_build;
+    ;;
+    *)
+      echo "default (none of above)"
+    ;;
+  esac
+}
+
+#main process
+function MAIN () {  
+  case "${2}" in
+    REBUILD|WIPE)
+      pre_run_g_arg_init $1;
+      do_spx_build $2
+      exit 1
+    ;;
+    BUILD)
+      pre_run_g_arg_init $1; 
+      do_spx_build _BUILD
+      exit 1
+    ;;
+    *)
+      tool_brif;
+    ;;
+  esac
+  tool_brif;
+}
+
+#it starts here
+MAIN $1 $2
