@@ -95,7 +95,7 @@ function make_image_name_by_timestamp () {
   ${g_arg_spx_ws}Build/output/$imgname.ima_enc
 }
 
-#before build first clean
+#before build , clean it
 function clean_old_img () {
   rm -rf ${g_arg_spx_ws}Build/output/*.ima_enc
   rm -rf ${g_arg_spx_ws}Build/output/*.ima
